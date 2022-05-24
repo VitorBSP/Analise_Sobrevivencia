@@ -1,0 +1,313 @@
+---
+title: "Lista2"
+output: html_document
+date: '2022-05-24'
+---
+
+```{r, echo = F}
+options(digits=3)  #Arrendodamento
+options(scipen=999)
+ggplot2::theme_set(ggplot2::theme_minimal()) #Tema dos gráficos produzidos no ggplot2
+knitr::opts_chunk$set(echo=F,message=F,warning=F,fig.pos = 'H',fig.align = 'center',fig.width=7.8, fig.height=3.85)
+scale_fill_discrete = \(...) ggplot2::scale_fill_brewer(... , palette="Set1") #Fixa a scale do fill dos gráficos do ggplot2
+```
+
+
+```{r, echo = F}
+library(survival)
+library(ggfortify)
+library(dplyr)
+
+```
+```{r}
+tempo_mediano <- function(obj){
+  obj <- obj |> filter(n.event != 0) |> select(estimate, time)
+  y0 = obj |> filter(estimate > 0.5) |> select(estimate) |> tail(n=1)
+  y1 = obj |> filter(estimate < 0.5) |> select(estimate) |> head(n=1)
+  x0 = obj |> filter(estimate > 0.5) |> select(time) |> tail(n=1)
+  x1 = obj |> filter(estimate < 0.5) |> select(time) |> head(n=1)
+  (0.5 - y0)/(y1 - y0)*(x1 - x0) + x0
+}
+tempo_medio<- function(obj){
+  if(obj |> tail(n=1) |> filter(n.event != 0) |> nrow() == 0){
+    temp = obj |> tail(n=1) |> with(time)
+  }else{
+    temp = c()
+  }
+  obj <- obj |> filter(n.event != 0) |> select(estimate, time)
+  temp <- obj |> with(time) |> c(temp)
+  sobre <- obj |> with(estimate)
+  temp_medio = 0
+  for(i in 1:(length(temp)-1)){
+    temp_medio = temp_medio+sobre[i]*(temp[i+1] - temp[i])
+  }
+  temp_medio = temp_medio + temp[1]
+  temp_medio
+}
+
+interpolacao <- function(obj, temp){
+  obj <- obj |> filter(n.event != 0) |> select(estimate, time)
+  y0 = obj |> filter(time < temp) |> select(estimate) |> tail(n=1)
+  y1 = obj |> filter(time > temp) |> select(estimate) |> head(n=1)
+  x0 = obj |> filter(time < temp) |> select(time) |> tail(n=1)
+  x1 = obj |> filter(time > temp) |> select(time) |> head(n=1)
+  (temp-x0)/(x1 - x0)*(y1 - y0) + y0
+  
+}
+
+prob <- function(obj, temp){
+  y_ = interpolacao(obj, temp)
+  obj <- obj |> filter(n.event != 0) |> select(estimate, time)
+  y = obj |> filter(time == temp) |> select(estimate)
+  list(prob = y, inter = y_)
+}
+
+tempo_medio_restante <- function(obj, param){
+  y = prob(obj, param)
+  if(obj |> tail(n=1) |> filter(n.event != 0) |> nrow() == 0){
+    temp = obj |> tail(n=1) |> with(time)
+  }else{
+    temp = c()
+  }
+  obj <- obj |> filter(n.event != 0) |> select(estimate, time)
+  temp <- obj |> filter(time > param) |> with(time) |> c(temp)
+  sobre <- obj |> filter(time > param) |> with(estimate)
+  sobre1 <- c(as.double(y$prob), sobre)
+  sobre <- c(as.double(y$inter),sobre)
+  temp <- c(param, temp)
+  temp_medio_restante = 0
+  temp_medio_restante1 = 0
+  for(i in 1:(length(temp)-1)){
+    temp_medio_restante = temp_medio_restante+sobre[i]*(temp[i+1] - temp[i])
+    temp_medio_restante1 = temp_medio_restante1+sobre1[i]*(temp[i+1] - temp[i])
+  }
+  temp_medio_restante = temp_medio_restante/sobre[1]
+  temp_medio_restante1 = temp_medio_restante1/sobre1[1]
+  list(prob = temp_medio_restante1, inter = temp_medio_restante)
+
+}
+
+
+tempo_interpolado <- function(obj, st){
+  obj <- obj |> filter(n.event != 0) |> select(estimate, time)
+  y0 = obj |> filter(estimate > st) |> select(estimate) |> tail(n=1)
+  y1 = obj |> filter(estimate < st) |> select(estimate) |> head(n=1)
+  x0 = obj |> filter(estimate > st) |> select(time) |> tail(n=1)
+  x1 = obj |> filter(estimate < st) |> select(time) |> head(n=1)
+  (st - y0)/(y1 - y0)*(x1 - x0) + x0
+}
+
+prob_sem_inter <- function(obj, filter){
+  obj <- obj |> filter(n.event != 0) |> select(estimate, time) |> 
+  y = obj |> filter(time == temp) |> select(estimate)
+  list(prob = y, inter = y_)
+}
+
+```
+
+# Questão 3
+
+```{r}
+radio = '7, 34, 42, 63, 64, 74, 83, 84, 91, 108, 112, 129, 133, 133, 139, 140, 140, 146, 149, 154, 157, 160, 160, 165, 173, 176, 185+, 218, 225, 241, 248, 273, 277, 279+, 297, 319+, 405, 417, 420, 440, 523, 523+, 583, 594, 1101, 1116+, 1146, 1226+, 1349+, 1412+, 1417'
+
+radio = stringr::str_split(radio, ", ") |> unlist()
+
+censura <- as.vector(stringr::str_detect(radio,"[+]") |> sapply(\(x) if(x == TRUE ) 0 else 1))
+
+radio <- gsub("[+]", "", radio) |> as.integer()
+
+
+df <- data.frame(radio = radio, censura = censura)
+```
+# Banco de dados da Questão 3 
+```{r}
+df
+```
+
+## Letra A
+
+*A função de sobrevivência por meio dos estimadores de Kaplan-Meier e de Nelson-Aalen.
+Apresente-as em tabelas e gráficos.*
+
+
+Entendendo a documentação do pacote `Survival`
+```{r}
+kaplan = survfit(Surv(df$radio,df$censura)~1) |> 
+    broom::tidy()
+nelson = survfit(Surv(df$radio,df$censura)~1, stype = 2) |> 
+    broom::tidy()
+nelson2 = survfit(coxph(Surv(df$radio,df$censura)~1,method = "breslow")) |> 
+  broom::tidy()
+
+kaplan |> 
+    dplyr::select(Estimate_KM = estimate) |> 
+    bind_cols(nelson |> select(time, Estimate_NH = estimate)) |> 
+    bind_cols(nelson2 |> select(Estimate_NH2 = estimate)) |> head(n=10)
+```
+
+Assim podemos ver que os dois jeitos aparentemente são iguais.
+
+```{r}
+nelson$estimate == nelson2$estimate
+```
+
+No entanto a comparação múltipla nega, iremos investigar as negações.
+
+```{r}
+nelson2$estimate[36:43]
+```
+
+```{r}
+nelson$estimate[36:43]
+```
+Assim, percebemos que até nas negações eles são iguais, a questão deve ser em algum arrendondamento, assim utilizaremos apenas o `survfit` nelson.
+
+### Gráfico
+
+```{r}
+kaplan |> 
+    dplyr::select(Estimate_KM = estimate) |> 
+    bind_cols(nelson |> select(Tempo = time, Estimate_NH = estimate)) |> 
+    ggplot()+
+    geom_line(aes(Tempo, Estimate_KM, color = 'Kaplan-Meier'), size = 2)+
+    geom_point(aes(Tempo, Estimate_KM), color = 'red', size = 3) +
+    geom_line(aes(Tempo, Estimate_NH, color = 'Nelson-Aalen'), size = 2)+
+    geom_point(aes(Tempo, Estimate_NH), color = 'blue', size = 3) +
+    scale_colour_manual("Legenda Linhas", 
+                        values = c( "Kaplan-Meier" = "red", "Nelson-Aalen" = "blue"))
+```
+
+## Letra B
+
+*Os tempos mediano e médio.*
+
+**Para o Estimador Kaplan-Meier: **
+
+Temos que o tempo médio é `r tempo_medio(kaplan)` e o tempo mediano é `r tempo_mediano(kaplan)`.
+
+**Para o Estimador Nelson-Aalen: **
+
+Temos que o tempo médio é `r tempo_medio(nelson)` e o tempo mediano é `r tempo_mediano(nelson)`.
+
+
+## Letra C
+
+*As probabilidade de um paciente com câncer sobreviver a: i) 42 dias, ii) 100 dias, 
+iii) 300 dias e iv) 1000 dias.*
+
+Nessa questão geraremos estimativas utilizando tanto interpolação quanto as probabilidades geradas pelos **degraus** da curva de sobrevivência dos estimadores. 
+
+**Para o Estimador Kaplan-Meier: **
+Temos que a probabilidade de sobreviver a 42 dias pela curva é `r prob(kaplan,42)$prob`, enquanto pela interpolação é `r prob(kaplan,42)$inter`, para 100, 300 e 1000 dias só conseguimos estimar com a interpolação, que são `r prob(kaplan,100)$inter`, `r prob(kaplan,300)$inter` e `r prob(kaplan,1000)$inter`, respectivamente. 
+
+**Para o Estimador Nelson-Aalen: **
+
+Temos que a probabilidade de sobreviver a 42 dias pela curva é `r prob(nelson,42)$prob`, enquanto pela interpolação é `r prob(nelson,42)$inter`, para 100, 300 e 1000 dias só conseguimos estimar com a interpolação, que são `r prob(nelson,100)$inter`, `r prob(nelson,300)$inter` e `r prob(nelson,1000)$inter`, respectivamente. 
+
+
+## Letra D
+
+*O tempo médio de vida restante dos pacientes que sobreviveram 1000 dias*
+
+
+**Para o Estimador Kaplan-Meier: **
+
+Temos que o tempo médio restante é 
+`r tempo_medio_restante(kaplan,1000)$inter`.
+
+**Para o Estimador Nelson-Aalen: **
+
+Temos que o tempo médio restante é 
+`r tempo_medio_restante(nelson,1000)$inter`.
+
+
+## Letra E
+
+*Interprete as estimativas obtidas nos três itens anteriores*
+
+Como a interpretação para o estimador de Kaplan-Meier é análoga a interpretação para o estimador de Nelson-Aalen, interpretação apenas as estimativas do estimador de Kaplan-Meier por ser o mais utilizado.
+
+Com o tempo médio e mediano podemos fornecer medidas de tendência central para a curva de sobrevivência, assim o tempo médio e tempo mediano fornecem a média e mediana de sobrevivência dos indivíduos neste modelo.
+
+Verificando a probabilidade de sobrevicência para 42, 100, 300 e 1000 dias temos a probabilidade de um paciente com câncer sobreviver pelo menos esse tempo.
+
+O tempo médio de vida restante, verificamos um paciente que sobreviveu até 1000 dias, qual o tempo médio de sobrevivência restante, ou seja, dado que sobreviveu 1000 dias, quanto tempo mais o paciente vai sobreviver. 
+
+
+# Letra F
+
+*Para quais tempos tem-se: S(t) = 0.80, S(t) = 0.30, S(t) = 0.10? Interprete*
+
+**Para o Estimador Kaplan-Meier: **
+
+Dado a estimativa da probabilidade de sobrevivência de 0.8, 0.3 e 0.1, temos que o tempo associado a essas probabilidades é: `r tempo_interpolado(kaplan, 0.8)`, `r tempo_interpolado(kaplan, 0.3)` e `r tempo_interpolado(kaplan, 0.1)`, respectivamente. 
+
+**Para o Estimador Nelson-Aalen: **
+
+Dado a estimativa da probabilidade de sobrevivência de 0.8, 0.3 e 0.1, temos que o tempo associado a essas probabilidades é: `r tempo_interpolado(nelson, 0.8)`, `r tempo_interpolado(nelson, 0.3)` e `r tempo_interpolado(nelson, 0.1)`, respectivamente. 
+
+
+#Questão 4
+
+
+```{r}
+leucemia = "9, 13, 13+, 18, 23, 28+, 31, 34, 45+, 48, 161+, 5, 5, 8, 8, 12, 16+, 23, 27, 30, 33, 43, 45"
+leucemia = stringr::str_split(leucemia, ", ") |> unlist()
+
+censura1 <- as.vector(stringr::str_detect(leucemia,"[+]") |> sapply(\(x) if(x == TRUE) 0 else 1))
+
+leucemia <- gsub("[+]", "", leucemia) |> as.integer()
+leucemia
+
+grupos=c(rep(1,11),rep(2,12))
+
+df1 <- data.frame(leucemia = leucemia, censura = censura1, grupos = grupos)
+```
+
+```{r}
+kaplan1 = survfit(Surv(df1$leucemia,df1$censura)~grupos) |> 
+    broom::tidy()
+nelson1 = survfit(Surv(df1$leucemia,df1$censura)~grupos, stype = 2) |> 
+    broom::tidy()
+```
+
+## Letra A
+
+*Represente graficamente as curvas de sobrevivência (Kaplan-Meier e Nelson-Aalen).*
+
+```{r}
+quimio <- kaplan1 |> 
+    dplyr::select(Estimate_KM = estimate, grupos = strata) |> 
+    bind_cols(nelson1 |> select(Tempo = time, Estimate_NH = estimate)) |>
+    filter(grupos == "grupos=1")
+
+
+nquimio <- kaplan1 |> 
+    dplyr::select(Estimate_KM = estimate, grupos = strata) |> 
+    bind_cols(nelson1 |> select(Tempo = time, Estimate_NH = estimate)) |>
+    filter(grupos == "grupos=2")
+
+    ggplot()+
+    geom_line(data = quimio, aes(Tempo, Estimate_KM, color = 'Kaplan-Meier - Mantido'), size = 2)+
+    geom_point(data = quimio,aes(Tempo, Estimate_KM), color = 'red', size = 3) +
+    geom_line(data = quimio,aes(Tempo, Estimate_NH, color = 'Nelson-Aalen - Mantido'), size = 2)+
+    geom_point(data = quimio,aes(Tempo, Estimate_NH), color = 'blue', size = 3) +
+    geom_line(data = nquimio, aes(Tempo, Estimate_KM, color = 'Kaplan-Meier - Não Mantido'), size = 2)+
+    geom_point(data = nquimio,aes(Tempo, Estimate_KM), color = 'pink', size = 3) +
+    geom_line(data = nquimio,aes(Tempo, Estimate_NH, color = 'Nelson-Aalen - Não Mantido'), size = 2)+
+    geom_point(data = nquimio,aes(Tempo, Estimate_NH), color = 'light blue', size = 3)+
+    scale_colour_manual("Legenda Linhas", 
+                        values = c( "Kaplan-Meier - Mantido" = "red", "Nelson-Aalen - Mantido" = "blue", 'Kaplan-Meier - Não Mantido' = "pink", 'Nelson-Aalen - Não Mantido' = "light blue" ))
+```
+
+## Letra B
+
+*Estime a probabilidade dos pacientes ficarem livres da doença por mais que 30 semanas nos dois grupos. Obtenha intervalo de 95% de confiança (fórmula de Green-Wood e transformação log(− log))*
+
+```{r}
+prob(kaplan1 |> filter(strata == 'grupos=1'), 30) 
+prob(kaplan1 |> filter(strata == 'grupos=2'), 30)
+prob(nelson1 |> filter(strata == 'grupos=1'), 30) 
+prob(nelson1 |> filter(strata == 'grupos=2'), 30)
+```
+

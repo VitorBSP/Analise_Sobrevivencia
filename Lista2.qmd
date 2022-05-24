@@ -7,6 +7,86 @@ format: html
 ```{r}
 library(survival)
 library(ggfortify)
+library(dplyr)
+```
+```{r}
+tempo_mediano <- function(obj){
+  obj <- obj |> filter(n.event != 0) |> select(estimate, time)
+  y0 = obj |> filter(estimate > 0.5) |> select(estimate) |> tail(n=1)
+  y1 = obj |> filter(estimate < 0.5) |> select(estimate) |> head(n=1)
+  x0 = obj |> filter(estimate > 0.5) |> select(time) |> tail(n=1)
+  x1 = obj |> filter(estimate < 0.5) |> select(time) |> head(n=1)
+  (0.5 - y0)/(y1 - y0)*(x1 - x0) + x0
+}
+tempo_medio<- function(obj){
+  if(obj |> tail(n=1) |> filter(n.event != 0) |> nrow() == 0){
+    temp = obj |> tail(n=1) |> with(time)
+  }else{
+    temp = c()
+  }
+  obj <- obj |> filter(n.event != 0) |> select(estimate, time)
+  temp <- obj |> with(time) |> c(temp)
+  sobre <- obj |> with(estimate)
+  temp_medio = 0
+  for(i in 1:(length(temp)-1)){
+    temp_medio = temp_medio+sobre[i]*(temp[i+1] - temp[i])
+  }
+  temp_medio = temp_medio + temp[1]
+  temp_medio
+}
+
+interpolacao <- function(obj, temp){
+  obj <- obj |> filter(n.event != 0) |> select(estimate, time)
+  y0 = obj |> filter(time < temp) |> select(estimate) |> tail(n=1)
+  y1 = obj |> filter(time > temp) |> select(estimate) |> head(n=1)
+  x0 = obj |> filter(time < temp) |> select(time) |> tail(n=1)
+  x1 = obj |> filter(time > temp) |> select(time) |> head(n=1)
+  (temp-x0)/(x1 - x0)*(y1 - y0) + y0
+  
+}
+
+prob <- function(obj, temp){
+  y_ = interpolacao(obj, temp)
+  obj <- obj |> filter(n.event != 0) |> select(estimate, time)
+  y = obj |> filter(time == temp) |> select(estimate)
+  list(prob = y, inter = y_)
+}
+
+tempo_medio_restante <- function(obj, param){
+  y = prob(obj, param)
+  if(obj |> tail(n=1) |> filter(n.event != 0) |> nrow() == 0){
+    temp = obj |> tail(n=1) |> with(time)
+  }else{
+    temp = c()
+  }
+  obj <- obj |> filter(n.event != 0) |> select(estimate, time)
+  temp <- obj |> filter(time > param) |> with(time) |> c(temp)
+  sobre <- obj |> filter(time > param) |> with(estimate)
+  sobre1 <- c(as.double(y$prob), sobre)
+  sobre <- c(as.double(y$inter),sobre)
+  temp <- c(param, temp)
+  temp_medio_restante = 0
+  temp_medio_restante1 = 0
+  for(i in 1:(length(temp)-1)){
+    temp_medio_restante = temp_medio_restante+sobre[i]*(temp[i+1] - temp[i])
+    temp_medio_restante1 = temp_medio_restante1+sobre1[i]*(temp[i+1] - temp[i])
+  }
+  temp_medio_restante = temp_medio_restante/sobre[1]
+  temp_medio_restante1 = temp_medio_restante1/sobre1[1]
+  list(temp_medio_restante = temp_medio_restante1, temp_medio_restante_inter = temp_medio_restante)
+
+}
+
+
+tempo_interpolado <- function(obj, st){
+  obj <- obj |> filter(n.event != 0) |> select(estimate, time)
+  y0 = obj |> filter(estimate > st) |> select(estimate) |> tail(n=1)
+  y1 = obj |> filter(estimate < st) |> select(estimate) |> head(n=1)
+  x0 = obj |> filter(estimate > st) |> select(time) |> tail(n=1)
+  x1 = obj |> filter(estimate < st) |> select(time) |> head(n=1)
+  (st - y0)/(y1 - y0)*(x1 - x0) + x0
+}
+
 ```
 
 # Questão 3
@@ -22,5 +102,113 @@ radio <- gsub("[+]", "", radio) |> as.integer()
 radio
 
 df <- data.frame(radio = radio, censura = censura)
- ```
+```
+# Banco de dados da Questão 3 
+```{r}
+df
+```
+
+## Letra A
+
+Entendendo a documentação do pacote `Survival`
+```{r}
+kaplan = survfit(Surv(df$radio,df$censura)~1) |> 
+    broom::tidy()
+nelson = survfit(Surv(df$radio,df$censura)~1, stype = 2) |> 
+    broom::tidy()
+nelson2 = survfit(coxph(Surv(df$radio,df$censura)~1,method = "breslow")) |> 
+  broom::tidy()
+
+kaplan |> 
+    dplyr::select(Estimate_KM = estimate) |> 
+    bind_cols(nelson |> select(time, Estimate_NH = estimate)) |> 
+    bind_cols(nelson2 |> select(Estimate_NH2 = estimate)) |> head(n=10)
+```
+
+Assim podemos ver que os dois jeitos aparentemente são iguais.
+
+```{r}
+nelson$estimate == nelson2$estimate
+```
+
+No entanto a comparação múltipla nega, iremos investigar as negações.
+
+```{r}
+nelson2$estimate[36:43]
+```
+
+```{r}
+nelson$estimate[36:43]
+```
+Assim, percebemos que até nas negações eles são iguais, a questão deve ser em algum arrendondamento, assim utilizaremos apenas o `survfit` nelson.
+
+### Gráfico
+
+```{r}
+kaplan |> 
+    dplyr::select(Estimate_KM = estimate) |> 
+    bind_cols(nelson |> select(Tempo = time, Estimate_NH = estimate)) |> 
+    ggplot()+
+    geom_line(aes(Tempo, Estimate_KM, color = 'Kaplan-Meier'), size = 2)+
+    geom_point(aes(Tempo, Estimate_KM), color = 'red', size = 3) +
+    geom_line(aes(Tempo, Estimate_NH, color = 'Nelson-Aalen'), size = 2)+
+    geom_point(aes(Tempo, Estimate_NH), color = 'blue', size = 3) +
+    scale_colour_manual("Legenda Linhas", 
+                        values = c( "Kaplan-Meier" = "red", "Nelson-Aalen" = "blue"))
+```
+
+## Letra B
+
+**Para o Estimador Kaplan-Meier: **
+
+Temos que o tempo médio é `r tempo_medio(kaplan)` e o tempo mediano é `r tempo_mediano(kaplan)`.
+
+**Para o Estimador Nelson-Aalen: **
+
+Temos que o tempo médio é `r tempo_medio(nelson)` e o tempo mediano é `r tempo_mediano(nelson)`.
+
+#Questão 4
+
+
+```{r}
+leucemia = "9, 13, 13+, 18, 23, 28+, 31, 34, 45+, 48, 161+, 5, 5, 8, 8, 12, 16+, 23, 27, 30, 33, 43, 45"
+leucemia = stringr::str_split(leucemia, ", ") |> unlist()
+
+censura1 <- as.vector(stringr::str_detect(leucemia,"[+]") |> sapply(\(x) if(x == TRUE) 0 else 1))
+
+leucemia <- gsub("[+]", "", leucemia) |> as.integer()
+leucemia
+
+df1 <- data.frame(leucemia = leucemia, censura = censura1)
+```
+
+```{r}
+kaplan = survfit(Surv(df1$leucemia,df1$censura)~1) |> 
+    broom::tidy()
+nelson = survfit(Surv(df1$leucemia,df1$censura)~1, type="fh") |> 
+    broom::tidy()
+nelson2 = survfit(coxph(Surv(df1$leucemia,df1$censura)~1,method = "breslow")) |> 
+  broom::tidy()
+teste1 = survfit(Surv(df1$leucemia,df1$censura)~1, ctype=2) |> 
+    broom::tidy()
+teste2= survfit(Surv(df1$leucemia,df1$censura)~1, ctype=2, stype = 2) |> 
+    broom::tidy()
+teste3= survfit(Surv(df1$leucemia,df1$censura)~1, ctype=1, stype = 2) |> 
+    broom::tidy()
+
+kaplan |> 
+    dplyr::select(EstimateKM_prof = estimate) |> 
+    bind_cols(nelson |> select(time, estimate_alisson = estimate)) |> 
+    bind_cols(nelson2 |> select(Estimate_prof = estimate)) |>
+    bind_cols(teste1 |> select(Estimate_ctype1 = estimate)) |> 
+    bind_cols(teste2 |> select(Estimate_ctype2 = estimate)) |> 
+    bind_cols(teste3 |> select(Estimate_stype2 = estimate)) |> View()
+
+```
+
+
+```{r}
+
+```
+
 
