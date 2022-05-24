@@ -97,11 +97,28 @@ tempo_interpolado <- function(obj, st){
   (st - y0)/(y1 - y0)*(x1 - x0) + x0
 }
 
-prob_sem_inter <- function(obj, filter){
-  obj <- obj |> filter(n.event != 0) |> select(estimate, time) |> 
-  y = obj |> filter(time == temp) |> select(estimate)
-  list(prob = y, inter = y_)
+
+interpolacao_ic <- function(obj, temp){
+  obj <- obj |> filter(n.event != 0) |> select(conf.high, conf.low, time)
+  y0 = obj |> filter(time < temp) |> select(conf.high) |> tail(n=1)
+  y1 = obj |> filter(time > temp) |> select(conf.high) |> head(n=1)
+  x0 = obj |> filter(time < temp) |> select(time) |> tail(n=1)
+  x1 = obj |> filter(time > temp) |> select(time) |> head(n=1)
+  ls = (temp-x0)/(x1 - x0)*(y1 - y0) + y0
+  y0_ = obj |> filter(time < temp) |> select(conf.low) |> tail(n=1)
+  y1_ = obj |> filter(time > temp) |> select(conf.low) |> head(n=1)
+  li = (temp-x0)/(x1 - x0)*(y1_ - y0_) + y0_
+  list(li = li, ls = ls)
 }
+
+prob_ic <- function(obj, temp){
+  y_ = interpolacao_ic(obj, temp)
+  obj <- obj |> filter(n.event != 0) |> select(conf.high, conf.low, time)
+  li = obj |> filter(time == temp) |> select(conf.low)
+  ls = obj |> filter(time == temp) |> select(conf.high)
+  list(li = li, ls = ls, li_inter = y_$li, ls_inter = y_$ls) -> a
+}
+
 
 ```
 
@@ -265,9 +282,13 @@ df1 <- data.frame(leucemia = leucemia, censura = censura1, grupos = grupos)
 ```
 
 ```{r}
-kaplan1 = survfit(Surv(df1$leucemia,df1$censura)~grupos) |> 
+kaplan1 = survfit(Surv(df1$leucemia,df1$censura)~grupos, conf.type = "plain") |> 
     broom::tidy()
-nelson1 = survfit(Surv(df1$leucemia,df1$censura)~grupos, stype = 2) |> 
+nelson1 = survfit(Surv(df1$leucemia,df1$censura)~grupos, stype = 2, conf.type = "plain") |> 
+    broom::tidy()
+kaplan2 = survfit(Surv(df1$leucemia,df1$censura)~grupos, conf.type = "log-log") |> 
+    broom::tidy()
+nelson2 = survfit(Surv(df1$leucemia,df1$censura)~grupos, stype = 2, conf.type = "log-log") |> 
     broom::tidy()
 ```
 
@@ -288,13 +309,17 @@ nquimio <- kaplan1 |>
     filter(grupos == "grupos=2")
 
     ggplot()+
-    geom_line(data = quimio, aes(Tempo, Estimate_KM, color = 'Kaplan-Meier - Mantido'), size = 2)+
+    geom_line(data = quimio, aes(Tempo, Estimate_KM, 
+                                 color = 'Kaplan-Meier - Mantido'), size = 2)+
     geom_point(data = quimio,aes(Tempo, Estimate_KM), color = 'red', size = 3) +
-    geom_line(data = quimio,aes(Tempo, Estimate_NH, color = 'Nelson-Aalen - Mantido'), size = 2)+
+    geom_line(data = quimio,aes(Tempo, Estimate_NH, 
+                                color = 'Nelson-Aalen - Mantido'), size = 2)+
     geom_point(data = quimio,aes(Tempo, Estimate_NH), color = 'blue', size = 3) +
-    geom_line(data = nquimio, aes(Tempo, Estimate_KM, color = 'Kaplan-Meier - Não Mantido'), size = 2)+
+    geom_line(data = nquimio, aes(Tempo, Estimate_KM, 
+                                  color = 'Kaplan-Meier - Não Mantido'), size = 2)+
     geom_point(data = nquimio,aes(Tempo, Estimate_KM), color = 'pink', size = 3) +
-    geom_line(data = nquimio,aes(Tempo, Estimate_NH, color = 'Nelson-Aalen - Não Mantido'), size = 2)+
+    geom_line(data = nquimio,aes(Tempo, Estimate_NH, 
+                                 color = 'Nelson-Aalen - Não Mantido'), size = 2)+
     geom_point(data = nquimio,aes(Tempo, Estimate_NH), color = 'light blue', size = 3)+
     scale_colour_manual("Legenda Linhas", 
                         values = c( "Kaplan-Meier - Mantido" = "red", "Nelson-Aalen - Mantido" = "blue", 'Kaplan-Meier - Não Mantido' = "pink", 'Nelson-Aalen - Não Mantido' = "light blue" ))
@@ -304,10 +329,41 @@ nquimio <- kaplan1 |>
 
 *Estime a probabilidade dos pacientes ficarem livres da doença por mais que 30 semanas nos dois grupos. Obtenha intervalo de 95% de confiança (fórmula de Green-Wood e transformação log(− log))*
 
+**Para o Estimador Kaplan-Meier: **
+
+No grupo 1, temos a estimativa por pontual interpolação, `r prob(kaplan1 |> filter(strata == 'grupos=1'), 30)$inter ` e com intervalo de confiança pela formula de Green-Wood, com limites por interpolação sendo inferior: `r  prob_ic(kaplan1 |> filter(strata == 'grupos=1'), 30)$li_inter` e o superior `r  prob_ic(kaplan1 |> filter(strata == 'grupos=1'), 30)$ls_inter`.
+
+No grupo 2, temos a estimativa por pontual interpolação, `r prob(kaplan1 |> filter(strata == 'grupos=2'), 30)$inter ` e pela curva, `r prob(kaplan1 |> filter(strata == 'grupos=2'), 30)$prob`,  e com intervalo de confiança pela formula de Green-Wood, com limites por interpolação sendo inferior: `r  prob_ic(kaplan1 |> filter(strata == 'grupos=2'), 30)$li_inter` e o superior `r  prob_ic(kaplan1 |> filter(strata == 'grupos=2'), 30)$ls_inter`, e intervalo pela curva `r  prob_ic(kaplan1 |> filter(strata == 'grupos=2'), 30)$li` e o superior `r  prob_ic(kaplan1 |> filter(strata == 'grupos=2'), 30)$ls`
+
+No grupo 1, temos a estimativa por pontual interpolação, `r prob(kaplan2 |> filter(strata == 'grupos=1'), 30)$inter ` e com intervalo de confiança pela transformação log-log, com limites por interpolação sendo inferior: `r  prob_ic(kaplan2 |> filter(strata == 'grupos=1'), 30)$li_inter` e o superior `r  prob_ic(kaplan2 |> filter(strata == 'grupos=1'), 30)$ls_inter`.
+
+No grupo 2, temos a estimativa por pontual interpolação, `r prob(kaplan2 |> filter(strata == 'grupos=2'), 30)$inter ` e pela curva, `r prob(kaplan2 |> filter(strata == 'grupos=2'), 30)$prob`,  e com intervalo de confiança pela transformação log-log, com limites por interpolação sendo inferior: `r  prob_ic(kaplan2 |> filter(strata == 'grupos=2'), 30)$li_inter` e o superior `r  prob_ic(kaplan2 |> filter(strata == 'grupos=2'), 30)$ls_inter`, e intervalo pela curva `r  prob_ic(kaplan2 |> filter(strata == 'grupos=2'), 30)$li` e o superior `r  prob_ic(kaplan2 |> filter(strata == 'grupos=2'), 30)$ls`
+
+
+**Para o Estimador Nelson-Aalen: **
+
+No grupo 1, temos a estimativa por pontual interpolação, `r prob(nelson1 |> filter(strata == 'grupos=1'), 30)$inter ` e com intervalo de confiança pela formula de Green-Wood, com limites por interpolação sendo inferior: `r  prob_ic(nelson1 |> filter(strata == 'grupos=1'), 30)$li_inter` e o superior `r  prob_ic(nelson1 |> filter(strata == 'grupos=1'), 30)$ls_inter`.
+
+No grupo 2, temos a estimativa por pontual interpolação, `r prob(nelson1 |> filter(strata == 'grupos=2'), 30)$inter ` e pela curva, `r prob(nelson1 |> filter(strata == 'grupos=2'), 30)$prob`,  e com intervalo de confiança pela formula de Green-Wood, com limites por interpolação sendo inferior: `r  prob_ic(nelson1 |> filter(strata == 'grupos=2'), 30)$li_inter` e o superior `r  prob_ic(nelson1 |> filter(strata == 'grupos=2'), 30)$ls_inter`, e intervalo pela curva `r  prob_ic(nelson1 |> filter(strata == 'grupos=2'), 30)$li` e o superior `r  prob_ic(nelson1 |> filter(strata == 'grupos=2'), 30)$ls`
+
+No grupo 1, temos a estimativa por pontual interpolação, `r prob(nelson2 |> filter(strata == 'grupos=1'), 30)$inter ` e com intervalo de confiança pela transformação log-log, com limites por interpolação sendo inferior: `r  prob_ic(nelson2 |> filter(strata == 'grupos=1'), 30)$li_inter` e o superior `r  prob_ic(nelson2 |> filter(strata == 'grupos=1'), 30)$ls_inter`.
+
+No grupo 2, temos a estimativa por pontual interpolação, `r prob(nelson2 |> filter(strata == 'grupos=2'), 30)$inter ` e pela curva, `r prob(nelson2 |> filter(strata == 'grupos=2'), 30)$prob`,  e com intervalo de confiança pela transformação log-log, com limites por interpolação sendo inferior: `r  prob_ic(nelson2 |> filter(strata == 'grupos=2'), 30)$li_inter` e o superior `r  prob_ic(nelson2 |> filter(strata == 'grupos=2'), 30)$ls_inter`, e intervalo pela curva `r  prob_ic(nelson2 |> filter(strata == 'grupos=2'), 30)$li` e o superior `r  prob_ic(nelson2 |> filter(strata == 'grupos=2'), 30)$ls`
+
+
+
+## Letra C
+
+*Compares os grupos atrav´es de um teste apropriado*
+
+Teste de Logrank
+
 ```{r}
-prob(kaplan1 |> filter(strata == 'grupos=1'), 30) 
-prob(kaplan1 |> filter(strata == 'grupos=2'), 30)
-prob(nelson1 |> filter(strata == 'grupos=1'), 30) 
-prob(nelson1 |> filter(strata == 'grupos=2'), 30)
+survdiff(Surv(df1$leucemia,df1$censura)~df1$grupos,rho=0)
 ```
+
+
+## Letra D
+
+Com nível de significância de 5% e apenas realizando a interpretação do p-valor não há evidências para rejeitar a hipótese nula, dado que o p-valor é 0.07, mas a análise gráfica percebendo que a curva de sobrevivência do grupo mantido é sempre maior que a curva de sobrevivência do grupo não mantido e que a quantidade de censuras no grupo é maior, eu tomaria a decisão de manter a quimioterapia.
 
