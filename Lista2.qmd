@@ -1,0 +1,26 @@
+---
+title: "Untitled"
+format: html
+---
+
+
+```{r}
+library(survival)
+library(ggfortify)
+```
+
+# Questão 3
+
+```{r}
+radio = '7, 34, 42, 63, 64, 74, 83, 84, 91, 108, 112, 129, 133, 133, 139, 140, 140, 146, 149, 154, 157, 160, 160, 165, 173, 176, 185+, 218, 225, 241, 248, 273, 277, 279+, 297, 319+, 405, 417, 420, 440, 523, 523+, 583, 594, 1101, 1116+, 1146, 1226+, 1349+, 1412+, 1417'
+
+radio = stringr::str_split(radio, ", ") |> unlist()
+
+censura <- as.vector(stringr::str_detect(radio,"[+]") |> sapply(\(x) if(x == TRUE ) 0 else 1))
+
+radio <- gsub("[+]", "", radio) |> as.integer()
+radio
+
+df <- data.frame(radio = radio, censura = censura)
+ ```
+
