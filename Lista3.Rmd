@@ -1,0 +1,91 @@
+---
+title: "Lista 3"
+output: html_document
+date: '2022-07-01'
+---
+
+```{r, echo = F}
+options(digits=3)  #Arrendodamento
+options(scipen=999)
+ggplot2::theme_set(ggplot2::theme_minimal()) #Tema dos gráficos produzidos no ggplot2
+knitr::opts_chunk$set(echo=F,message=F,warning=F,fig.pos = 'H',fig.align = 'center',fig.width=7.8, fig.height=3.85)
+scale_fill_discrete = \(...) ggplot2::scale_fill_brewer(... , palette="Set1") #Fixa a scale do fill dos gráficos do ggplot2
+```
+
+
+```{r, echo = F}
+library(survival)
+library(ggfortify)
+library(dplyr)
+library(magrittr)
+library(patchwork)
+```
+
+
+```{r func}
+banco <- function(vetor){
+  vetor_ajustado = stringr::str_split(vetor, ", ") |> unlist()
+  censura <- as.vector(stringr::str_detect(vetor_ajustado,"[+]") |> sapply(\(x) if(x == TRUE ) 0 else 1))
+  vetor_ajustado <- gsub("[+]", "", vetor_ajustado) |> as.integer()
+  df <- data.frame(tempos = vetor_ajustado, censura = censura)
+}
+
+grafico <- function(data, v1, title, v2 = tempo){
+  ggplot(data) +
+    geom_point(aes({{v2}},{{v1}})) +
+    labs(title = title)
+}
+
+```
+
+
+```{r}
+df <- banco("6, 6, 6, 6+, 7, 9+, 10, 10+, 11+, 13, 16, 17+, 19+, 20+, 22, 23, 25+, 32+, 32+, 34+, 35+, 1, 1, 2, 2, 3, 4, 4, 5, 5, 8, 8, 8, 8, 11, 11, 12, 12, 15, 17, 22, 23")
+df <- df |> mutate(grupo = rep(c(1,2), c(21,21)))
+
+```
+
+```{r}
+fit_ekm <- survfit(Surv(tempos,censura)~grupo, data = df)
+ekm <- fit_ekm$surv %>% 
+  data.frame(sobrevivencia=.) %>% 
+    mutate(grupo = rep(c("Droga","Placebo"), c(fit_ekm$strata)), tempo = fit_ekm$time) %>%
+    mutate(grupo = factor(grupo))
+autoplot(fit_ekm)
+```
+
+
+
+```{r}
+grafico(ekm %>% filter(grupo == "Placebo"), -log(sobrevivencia), "Exponencial - Placebo")  +
+grafico(ekm %>% filter(grupo == "Placebo"), log(-log(sobrevivencia)), 
+         "Weibull - Placebo", log(tempo))  +
+grafico(ekm %>% filter(grupo == "Placebo"), qnorm(sobrevivencia), 
+         "Log-normal - Placebo", log(tempo))  
+```
+
+```{r}
+grafico(ekm %>% filter(grupo == "Droga"), -log(sobrevivencia), "Exponencial - Droga 6MP") +
+grafico(ekm %>% filter(grupo == "Droga"), log(-log(sobrevivencia)), 
+        "Weibull - Droga 6MP", log(tempo)) +
+grafico(ekm %>% filter(grupo == "Droga"), qnorm(sobrevivencia), 
+        "Log-normal - Droga 6MP", log(tempo))
+```
+
+
+```{r}
+fit_generalizado<-flexsurv::flexsurvreg(Surv(tempos,censura)~grupo, data = df,
+                                        dist='gengamma')
+fit_exp<-survreg(Surv(tempos,censura)~grupo, data=df, dist='exponential')
+fit_weibull<-survreg(Surv(tempos,censura)~grupo, data=df, dist='weibull')
+fit_lognorm<-survreg(Surv(tempos,censura)~grupo, data=df, dist='lognormal')
+
+1-pchisq(2*(fit_generalizado$loglik[1]-fit_exp$loglik[1]),2)
+1-pchisq(2*(fit_generalizado$loglik[1]-fit_weibull$loglik[1]),1)
+1-pchisq(2*(fit_generalizado$loglik[1]-fit_lognorm$loglik[1]),1)
+1-pchisq(2*(fit_weibull$loglik[1]-fit_exp$loglik[1]),1)
+
+```
+
+
+
