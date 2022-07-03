@@ -1,8 +1,19 @@
 ---
-title: "Lista 3"
-output: html_document
-date: '2022-07-01'
+title: "Questões - Lista 4"
+author: "Vítor Pereira"
+header-includes:
+   - \usepackage[brazil]{babel}
+   - \usepackage{bm}
+geometry: left=1.7cm, right=1.7cm, top=3cm, bottom=3cm
+output:
+  bookdown::pdf_document2:
+editor_options:
+  chunk_output_type: console
+indent: true
+nocite: '@*'
+link-citations: true
 ---
+
 
 ```{r, echo = F}
 options(digits=3)  #Arrendodamento
@@ -18,6 +29,7 @@ library(survival)
 library(ggfortify)
 library(dplyr)
 library(magrittr)
+library(kableExtra)
 library(patchwork)
 ```
 
@@ -38,6 +50,9 @@ grafico <- function(data, v1, title, v2 = tempo){
 
 ```
 
+# Droga 6MP x Placebo
+
+Considerando os dados do tempo em semanas até a remissão da leucemia, os pacientes foram divididos em dois grupos, onde um grupo recebeu o medicamento 6MP e o outro grupo com placebo. Para esses dois grupos temos a seguinte, curva de sobrevivência estimada:
 
 ```{r}
 df <- banco("6, 6, 6, 6+, 7, 9+, 10, 10+, 11+, 13, 16, 17+, 19+, 20+, 22, 23, 25+, 32+, 32+, 34+, 35+, 1, 1, 2, 2, 3, 4, 4, 5, 5, 8, 8, 8, 8, 11, 11, 12, 12, 15, 17, 22, 23")
@@ -45,7 +60,7 @@ df <- df |> mutate(grupo = rep(c("Droga","Placebo"), c(21,21)))
 
 ```
 
-```{r}
+```{r sobrevivencia, fig.cap="Curva de sobrevicência para ambos os grupos"}
 fit_ekm <- survfit(Surv(tempos,censura)~grupo, data = df)
 ekm <- fit_ekm$surv %>% 
   data.frame(sobrevivencia=.) %>% 
@@ -65,7 +80,7 @@ grafico(ekm %>% filter(grupo == "Placebo"), log(-log(sobrevivencia)),
 grafico(ekm %>% filter(grupo == "Placebo"), qnorm(sobrevivencia), 
          "Log-normal - Placebo", log(tempo))  
 ```
-Nos gráficos da Figura \ref{@fig:placebo}, percebemos que o modelo Log-normal temos que os dados estão mais curvados, já nos modelos Exponencial e Weibull, temos os pontos distribuídos de formas mais semelhantes, no entanto o modelo Expoencial está com os pontos mais concentrados na parte inicial e na Weibull os pontos estão mais espalhados, assim parece ter uma menor variação em relação à bissetriz (y = x), assim o modelo com a linearização mais apropriada para o Placebo é o modelo Weibull.
+Nos gráficos da Figura \@ref(fig:placebo), percebemos que o modelo Log-normal temos que os dados estão mais curvados, já nos modelos Exponencial e Weibull, temos os pontos distribuídos de formas mais semelhantes, no entanto o modelo Expoencial está com os pontos mais concentrados na parte inicial e na Weibull os pontos estão mais espalhados, assim parece ter uma menor variação em relação à bissetriz (y = x), assim o modelo com a linearização mais apropriada para o Placebo é o modelo Weibull.
 
 ```{r droga, fig.cap="Linearização do modelos paramétricos para o Droga 6MP"}
 grafico(ekm %>% filter(grupo == "Droga"), -log(sobrevivencia), "Exponencial - Droga 6MP") +
@@ -74,7 +89,7 @@ grafico(ekm %>% filter(grupo == "Droga"), log(-log(sobrevivencia)),
 grafico(ekm %>% filter(grupo == "Droga"), -qnorm(sobrevivencia), 
         "Log-normal - Droga 6MP", log(tempo))
 ```
-Nos gráficos da Figura \ref{@fig:droga}, percebemos que todos os modelos estão os pontos dispostos de formas semelhantes, com o mais diferente sendo o Modelo Exponencial, mas como todos os modelos são muito semelhantes, iremos ficar com o modelo escolhido no Placebo, o modelo exponencial. 
+Nos gráficos da Figura \@ref(fig:droga), percebemos que todos os modelos estão os pontos dispostos de formas semelhantes, com o mais diferente sendo o Modelo Exponencial, mas como todos os modelos são muito semelhantes, iremos ficar com o modelo escolhido no Placebo, o modelo exponencial. 
 
 
 ### Teste de Hipóteses
@@ -110,10 +125,6 @@ fit_generalizado2<-flexsurv::flexsurvreg(Surv(tempos,censura)~1, data = df_droga
 fit_exp2<-survreg(Surv(tempos,censura)~1, data=df_droga, dist='exponential')
 fit_weibull2<-survreg(Surv(tempos,censura)~1, data=df_droga, dist='weibull')
 fit_lognorm2<-survreg(Surv(tempos,censura)~1, data=df_droga, dist='lognormal')
-1-pchisq(2*(fit_generalizado2$loglik[1]-fit_exp2$loglik[1]),2)
-1-pchisq(2*(fit_generalizado2$loglik[1]-fit_weibull2$loglik[1]),1)
-1-pchisq(2*(fit_generalizado2$loglik[1]-fit_lognorm2$loglik[1]),1)
-1-pchisq(2*(fit_weibull2$loglik[1]-fit_exp2$loglik[1]),1)
 ```
 
 
@@ -123,54 +134,77 @@ Considerando apenas os grupo da Droga 6MP, utilizando os modelos Exponencial, We
 
 Utilizando o modelo Weibull como modelo generalizado e como modelo testado a Exponencial, temos que o p-valor é `r 1-pchisq(2*(fit_weibull2$loglik[1]-fit_exp2$loglik[1]),1) `, assim também não rejeitamos a $H_0$ e temos que o modelo Exponencial é mais adequado que o modelo Weibull.
 
-Assim, continuaremos a análise com os modelo exponencial, por ser o modelo mais simples.
+Assim, escolheremos o modelo exponencial, por não ter evidência contra sua adequação de acordo com o teste de hipóteses, também foi escolhido como o melhor graficamente e por ser o modelo mais simples.
 
-
-### Análise de resíduo
+# IPEC
+Nessa questão consideraremos os dados do IPEC e avaliaremos qual o melhor modelo para a sobrevivência sem considerar o uso de covariáveis, em que temos a seguinte curva de sobrevivência estimada:
 
 ```{r}
-beta=fit_exp2$coefficients
-# res�duo de Cox-Snell res�duo X KM_residuo+S_{exp1}(res)
-# para o modelo Exponencial
-res<- df_droga$tempo*exp(-t(rep(1, nrow(df_droga))) |> t()%*%(beta)) |> unlist()
-# res=temp*exp((-X%*%(beta))^gammahat) Se modelo Weibull
-# res=-log(1-pnorm((log(tempo)-X%*%(beta))/sigmahat)) Se modelo Log-normal
-# Para outras distribui��es obter as express�es do lambdahat= -log Shat
-ekm <- survfit(Surv(res,df_droga$censura)~1, type=c("kaplan-meier"))
-par(mfrow=c(1,2))
-plot(ekm, conf.int=F, lty=c(1,1), xlab="residuos", ylab="S(res) estimada")
-res2<-sort(res)
-exp1<-exp(-res2)
-lines(res2, exp1, lty=3)
-legend(0.8, 1.0, lty=c(1,3), c("Kaplan-Meier","Exponencial(1)"), lwd=1, bty="n", cex=0.8)
+ipec <- readr::read_delim('ipec.csv', delim = ';') |> 
+  mutate(tempo = as.numeric(tempo))
+```
 
-# KM_residuo X S_{exp1}(res)
-st<-ekm$surv
-t<-ekm$time
-sexp1<-exp(-t)
-plot(st, sexp1, xlab="S(res): Kaplan-Meier", ylab= "S(res): Exponencial(1)", pch=16)
-
-# res�duo padronizado 
-resp= log(temp)-X%*%(beta)
-par(mfrow=c(1,1))
-plot(df$)
-
-#res�duo martingal para identifica��o da
-# forma da covari�vel
-m=cens-res
-
-modelo=lm(m~lwbc)
-plot(lwbc, m)
-abline(lm(m~lwbc))
-
-# res�duo Deviance
-d=sign(-m)*sqrt(-2*(m+cens*log(cens-m)))
-rd=resid(fit4, type="deviance")
-plot(d)
-plot(rd)
-
+```{r sobrevivenciaipec, fig.cap="Curva de sobrevicência para os dados de IPEC"}
+fit_ekm2 <- survfit(Surv(tempo,status)~1, data = ipec)
+ekm2 <- fit_ekm2$surv %>% 
+  data.frame(sobrevivencia=.) %>%
+    mutate(tempo = fit_ekm2$time)
+autoplot(fit_ekm2)
 ```
 
 
+## Linearização
+Verificaremos qual o modelo paramétrico mais adequado ao conjunto de dados, utilizando novamente a linearização, investigaremos qualgráfico possui os pontos que se traçassemos uma reta  mais se assemelharia com a bissetriz (y = x).
 
+```{r ipec, fig.cap="Linearização do modelos paramétricos para o dados do IPEC"}
+grafico(ekm2, -log(sobrevivencia), "Exponencial")  +
+grafico(ekm2, log(-log(sobrevivencia)), 
+         "Weibull", log(tempo))  +
+grafico(ekm2, qnorm(sobrevivencia), 
+         "Log-normal", log(tempo))  
+```
+Nos gráficos da Figura \@ref(fig:ipec), temos que o modelo que está mais longe da linearidade é o modelo exponencial, com os modelos Weibull e Log-normal ficando bem semelhante quanto a linearização no entanto, o modelo Weibull tem os pontos levemente mais curvados que o modelo Log-normal no inicio, dando índicios de que será levemente inferior.
 
+## Kaplan-Meier VS Modelos Ajustados
+Verificaremos por outro método gráfico, qual o modelo paramétrico mais adequado ao conjunto de dados, pensando novamente na linearização, no entanto dessa fez utilizaremos a sobrevivência estimada pelo Kaplan-Meier versus a sobrevivência estimada pelos modelos probabilísticos. Analisando se a sobrevivência dos modelos probabalísticos se assemelha a do Kaplan-Meier pela linearização, pois se a relação com eles fosse dada pela bissetriz (y = x), teríamos que eles são iguais, então buscamos a linearidade que é dada pela bissetriz (que é a reta a 45°).
+
+```{r}
+fit_generalizado3<-flexsurv::flexsurvreg(Surv(tempo,status)~1, data = ipec,                                        dist='gengamma')
+fit_exp3<-survreg(Surv(tempo,status)~1, data=ipec, dist='exponential')
+fit_weibull3<-survreg(Surv(tempo,status)~1, data=ipec, dist='weibull')
+fit_lognorm3<-survreg(Surv(tempo,status)~1, data=ipec, dist='lognormal')
+
+alphae = exp(fit_exp3$coef)
+alphaw = exp(fit_weibull3$coef)
+gamaw = 1/fit_weibull3$scale
+mu = fit_lognorm3$coeff
+sigma = fit_lognorm3$scale
+
+ekm2 <- ekm2 %>% 
+          mutate(exponencial = exp(-tempo/alphae),
+                 weibull = exp(-(tempo/alphaw)^gamaw),
+                 log_normal =pnorm((-log(tempo)+ mu)/ sigma))
+```
+
+```{r ipec2, fig.cap="Sobrevivência de Kaplan-Meier vs Sobrevivência dos modelos paramétricos nos dados do IPEC"}
+grafico(ekm2, sobrevivencia, "Exponencial", exponencial)  +
+grafico(ekm2, sobrevivencia, 
+         "Weibull", weibull)  +
+grafico(ekm2, sobrevivencia, 
+         "Log-normal", log_normal)  
+```
+
+Nos gráficos da Figura \@ref(fig:ipec2), para esse gráfico temos que todos os modelos estão parecidos, no entanto, as regiões com sobrevivência constante são mais acentuadas no modelo exponencial e o com menos acentuada é o modelo log-normal, assim tendo outro indício de que será o modelo mais adequado, terminaremos a análise com o teste de hipótese a seguir. 
+
+## Teste de Hipóteses
+  
+Usaremos o teste de razão de verossimilhanças em modelos encaixados e utilizaremos a Gama Generalizada como o modelo mais geral.
+
+$$H_0:\text{O modelo testado é mais adequado que o modelo Generalizado.}$$
+$$H_1:\text{O modelo testado não é mais adequado que o modelo Generalizado.}$$
+
+Assim buscamos os modelos que não rejeitem a hipóteste $H_0$, assim para os modelos Exponencial, Weibull e Log-normal, temos os seguintes p-valores: `r 1-pchisq(2*(fit_generalizado3$loglik[1]-fit_exp3$loglik[1]),2)`, 
+`r 1-pchisq(2*(fit_generalizado3$loglik[1]-fit_weibull3$loglik[1]),1)` e
+`r 1-pchisq(2*(fit_generalizado3$loglik[1]-fit_lognorm3$loglik[1]),1)`, respectivamente, assim temos que para os modelos Exponencial e Weibull o p-valor foi menor que 0.05, e rejeitamos $H_0$, assim o modelo Gama Generalizado é mais adequado que eles para a análise dos dados da IPEC, no entanto para o modelo Log-normal, o p-valor foi maior que 0.05, assim não tem indício que o Gama Generalizado é mais adequado e confirmamos os índicios levantados anteriormente pelos métodos gráfico.
+
+Temos que o modelo Log-Normal é mais adequado para a análise dos dados de sobrevivência do IPEC.
